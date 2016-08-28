@@ -841,6 +841,7 @@ private[spark] object Utils extends Logging {
   private def findLocalInetAddress(): InetAddress = {
     val defaultIpOverride = System.getenv("SPARK_LOCAL_IP")
     if (defaultIpOverride != null) {
+logWarning("Has defaultIpOverride");
       InetAddress.getByName(defaultIpOverride)
     } else {
       val address = InetAddress.getLocalHost

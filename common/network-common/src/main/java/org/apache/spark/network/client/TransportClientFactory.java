@@ -58,6 +58,8 @@ import org.apache.spark.network.util.TransportConf;
  * TransportClient, all given {@link TransportClientBootstrap}s will be run.
  */
 public class TransportClientFactory implements Closeable {
+  public static String workerIp;
+  public static int workerPort;
 
   /** A simple data structure to track the pool of clients between two peer nodes. */
   private static class ClientPool {
@@ -176,6 +178,12 @@ public class TransportClientFactory implements Closeable {
           logger.info("Found inactive connection to {}, creating a new one.", resolvedAddress);
         }
       }
+      //clientPool.clients[clientIndex] = createClient(resolvedAddress);
+logger.info("Qiao: resolovedAddress " + resolvedAddress);
+logger.info("Qiao: create localAddress " + workerIp, workerPort);
+//Random rand = new Random();
+//InetSocketAddress localAddress = new InetSocketAddress("10.20.1.1", rand.nextInt(65534));
+//clientPool.clients[clientIndex] = createClient(resolvedAddress, localAddress);
       clientPool.clients[clientIndex] = createClient(resolvedAddress);
       return clientPool.clients[clientIndex];
     }
@@ -191,6 +199,69 @@ public class TransportClientFactory implements Closeable {
       throws IOException {
     final InetSocketAddress address = new InetSocketAddress(remoteHost, remotePort);
     return createClient(address);
+  }
+
+  /** Create a completely new {@link TransportClient} to the remote address. */
+  private TransportClient createClient(InetSocketAddress address, InetSocketAddress localAddress) throws IOException {
+    logger.debug("Creating new connection to {}", address);
+
+    Bootstrap bootstrap = new Bootstrap();
+    bootstrap.group(workerGroup)
+      .channel(socketChannelClass)
+      // Disable Nagle's Algorithm since we don't want packets to wait
+      .option(ChannelOption.TCP_NODELAY, true)
+      .option(ChannelOption.SO_KEEPALIVE, true)
+      .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, conf.connectionTimeoutMs())
+      .option(ChannelOption.ALLOCATOR, pooledAllocator);
+
+    final AtomicReference<TransportClient> clientRef = new AtomicReference<>();
+    final AtomicReference<Channel> channelRef = new AtomicReference<>();
+
+    bootstrap.handler(new ChannelInitializer<SocketChannel>() {
+      @Override
+      public void initChannel(SocketChannel ch) {
+        TransportChannelHandler clientHandler = context.initializePipeline(ch);
+        clientRef.set(clientHandler.getClient());
+        channelRef.set(ch);
+      }
+    });
+
+    // Connect to the remote server
+    long preConnect = System.nanoTime();
+logger.warn("qiao: TransportClient before connect localAddress=" + bootstrap);
+logger.warn("qiao: TransportClient connect " + address + " " + localAddress);
+    ChannelFuture cf = bootstrap.connect(address, localAddress);
+logger.warn("qiao: TransportClient after connect localAddress=" + bootstrap);
+    if (!cf.awaitUninterruptibly(conf.connectionTimeoutMs())) {
+      throw new IOException(
+        String.format("Connecting to %s timed out (%s ms)", address, conf.connectionTimeoutMs()));
+    } else if (cf.cause() != null) {
+      throw new IOException(String.format("Failed to connect to %s", address), cf.cause());
+    }
+
+    TransportClient client = clientRef.get();
+    Channel channel = channelRef.get();
+    assert client != null : "Channel future completed successfully with null client";
+
+    // Execute any client bootstraps synchronously before marking the Client as successful.
+    long preBootstrap = System.nanoTime();
+    logger.debug("Connection to {} successful, running bootstraps...", address);
+    try {
+      for (TransportClientBootstrap clientBootstrap : clientBootstraps) {
+        clientBootstrap.doBootstrap(client, channel);
+      }
+    } catch (Exception e) { // catch non-RuntimeExceptions too as bootstrap may be written in Scala
+      long bootstrapTimeMs = (System.nanoTime() - preBootstrap) / 1000000;
+      logger.error("Exception while bootstrapping client after " + bootstrapTimeMs + " ms", e);
+      client.close();
+      throw Throwables.propagate(e);
+    }
+    long postBootstrap = System.nanoTime();
+
+    logger.info("Successfully created connection to {} after {} ms ({} ms spent in bootstraps)",
+      address, (postBootstrap - preConnect) / 1000000, (postBootstrap - preBootstrap) / 1000000);
+
+    return client;
   }
 
   /** Create a completely new {@link TransportClient} to the remote address. */
