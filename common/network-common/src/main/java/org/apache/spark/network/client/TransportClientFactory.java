@@ -58,8 +58,6 @@ import org.apache.spark.network.util.TransportConf;
  * TransportClient, all given {@link TransportClientBootstrap}s will be run.
  */
 public class TransportClientFactory implements Closeable {
-  public static String workerIp;
-  public static int workerPort;
 
   /** A simple data structure to track the pool of clients between two peer nodes. */
   private static class ClientPool {
@@ -180,11 +178,11 @@ public class TransportClientFactory implements Closeable {
       }
       //clientPool.clients[clientIndex] = createClient(resolvedAddress);
 logger.info("Qiao: resolovedAddress " + resolvedAddress);
-logger.info("Qiao: create localAddress " + workerIp, workerPort);
-//Random rand = new Random();
-//InetSocketAddress localAddress = new InetSocketAddress("10.20.1.1", rand.nextInt(65534));
-//clientPool.clients[clientIndex] = createClient(resolvedAddress, localAddress);
-      clientPool.clients[clientIndex] = createClient(resolvedAddress);
+Random rand = new Random();
+InetSocketAddress localAddress = new InetSocketAddress("10.20.1.1", rand.nextInt(65535));
+logger.info("Qiao: create localAddress " + localAddress);
+clientPool.clients[clientIndex] = createClient(resolvedAddress, localAddress);
+      //clientPool.clients[clientIndex] = createClient(resolvedAddress);
       return clientPool.clients[clientIndex];
     }
   }

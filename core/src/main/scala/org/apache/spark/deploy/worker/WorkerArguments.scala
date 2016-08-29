@@ -31,8 +31,6 @@ import org.apache.spark.SparkConf
 private[worker] class WorkerArguments(args: Array[String], conf: SparkConf) {
   var host = Utils.localHostName()
   var port = 0
-  var workerIp = Utils.localHostName()
-  var workerPort = 0
   var webUiPort = 8081
   var cores = inferDefaultCores()
   var memory = inferDefaultMemory()
@@ -58,9 +56,6 @@ private[worker] class WorkerArguments(args: Array[String], conf: SparkConf) {
   }
 
   parse(args.toList)
-TransportClientFactory.workerIp = workerIp;
-TransportClientFactory.workerPort = workerPort;
-println("Got arguments " + workerIp + ":" + workerPort)
 
   // This mutates the SparkConf, so all accesses to it must be made after this line
   propertiesFile = Utils.loadDefaultSparkProperties(conf, propertiesFile)
@@ -85,15 +80,6 @@ println("Got arguments " + workerIp + ":" + workerPort)
 
     case ("--port" | "-p") :: IntParam(value) :: tail =>
       port = value
-      parse(tail)
-
-    case ("--workerIp" | "-h") :: value :: tail =>
-      Utils.checkHost(value, "Please use hostname " + value)
-      workerIp = value
-      parse(tail)
-
-    case ("--workerPort" | "-p") :: IntParam(value) :: tail =>
-      workerPort = value
       parse(tail)
 
     case ("--cores" | "-c") :: IntParam(value) :: tail =>
